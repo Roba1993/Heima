@@ -1,4 +1,3 @@
-use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 /// Bus which receives data with a specific ident and sends the message
@@ -21,21 +20,21 @@ pub struct Bus<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + C
 impl<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + Clone + Send> Bus<M, I> {
     /// Creates a new bus, which is providing a channel function, to
     /// create new channel to receive and send from and with the bus.
-    /// 
+    ///
     /// ```rust
     /// // Create the new bus
     /// use bus::{Bus, BusMessage};
-    /// 
+    ///
     /// let bus = Bus::new();
-    /// 
+    ///
     /// // Create two new channels
     /// let (Sender1, Receiver1) = bus.channel(vec!["Channel 1"]).unwrap();
     /// let (Sender2, Receiver2) = bus.channel(vec!["Channel 1"]).unwrap();
-    /// 
+    ///
     /// // Send a message from each sender
     /// Sender1.send(BusMessage::new("Message 1", "Channel 1")).unwrap();
     /// Sender2.send(BusMessage::new("Message 2", "Channel 1")).unwrap();
-    /// 
+    ///
     /// // Check if the messages got received
     /// assert_eq!("Message 1", Receiver1.recv().unwrap().message);
     /// assert_eq!("Message 1", Receiver2.recv().unwrap().message);
@@ -44,12 +43,12 @@ impl<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + Clone + Sen
     /// ```
     pub fn new() -> Self {
         // create the default channel
-        let (sender, receiver): (Sender<BusMessage<M, I>>, Receiver<BusMessage<M, I>>) = channel();
+        let (sender, receiver) = std::sync::mpsc::channel();
 
         // create a new bus-data type
         let bus_data = Arc::new(Mutex::new(BusData {
             sender_list: Vec::new(),
-            sender: sender,
+            sender,
         }));
 
         // copy a reference for the execution thread
@@ -74,13 +73,13 @@ impl<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + Clone + Sen
     /// performs the filter and copy tasks for each message
     fn bus_handler_intern(
         data: &Arc<Mutex<BusData<M, I>>>,
-        receiver: &Receiver<BusMessage<M, I>>,
-    ) -> Result<(), Error> {
+        receiver: &BusReceiver<M, I>,
+    ) -> Result<()> {
         // receive message from the bus
         let message = receiver.recv()?;
 
         // get the data
-        let mut bus_data = data.lock().map_err(|_| Error::Lock)?;
+        let mut bus_data = data.lock().map_err(|_| BusError::Lock)?;
 
         // clean up array
         let mut clean = vec![];
@@ -89,7 +88,7 @@ impl<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + Clone + Sen
         for (i, (sender, subscription)) in bus_data.sender_list.iter_mut().enumerate() {
             if subscription.contains(&message.ident) {
                 // send the message and run clean up code when an error occoured
-                if let Err(_) = sender.send(message.clone()) {
+                if sender.send(message.clone()).is_err() {
                     clean.push(i);
                 }
             }
@@ -103,38 +102,35 @@ impl<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + Clone + Sen
         Ok(())
     }
 
-    /// Create a new channel to and from the bus, returning a Sender and Receiver. 
+    /// Create a new channel to and from the bus, returning a Sender and Receiver.
     /// All data sendet to the Sender get availble to all Receivers which have provided
-    /// the same ident. 
-    /// 
+    /// the same ident.
+    ///
     /// ```rust
     /// use bus::{Bus, BusMessage};
-    /// 
+    ///
     /// // Create the new bus
     /// let bus = Bus::new();
-    /// 
+    ///
     /// // Create two new channels
     /// let (Sender1, Receiver1) = bus.channel(vec!["Channel 1"]).unwrap();
     /// let (Sender2, Receiver2) = bus.channel(vec!["Channel 1", "Channel 2"]).unwrap();
-    /// 
+    ///
     /// // Send a message from each sender
     /// Sender1.send(BusMessage::new("Message 1", "Channel 1")).unwrap();
     /// Sender2.send(BusMessage::new("Message 2", "Channel 2")).unwrap();
-    /// 
+    ///
     /// // Check if the messages got received
     /// assert_eq!("Message 1", Receiver1.recv().unwrap().message);
     /// assert_eq!("Message 1", Receiver2.recv().unwrap().message);
     /// assert_eq!("Message 2", Receiver2.recv().unwrap().message);
     /// ```
-    pub fn channel(
-        &self,
-        idents: Vec<I>,
-    ) -> Result<(Sender<BusMessage<M, I>>, Receiver<BusMessage<M, I>>), Error> {
+    pub fn channel(&self, idents: Vec<I>) -> Result<(BusSender<M, I>, BusReceiver<M, I>)> {
         // get the bus data
-        let mut bus_data = self.data.lock().map_err(|_| Error::Lock)?;
+        let mut bus_data = self.data.lock().map_err(|_| BusError::Lock)?;
 
         // create a new channel to communicate with the bus
-        let (sender, receiver) = channel();
+        let (sender, receiver) = std::sync::mpsc::channel();
 
         // push the new sender to the sender list
         bus_data.sender_list.push((sender, idents));
@@ -144,11 +140,25 @@ impl<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + Clone + Sen
     }
 }
 
+impl<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + Clone + Send> Default
+    for Bus<M, I>
+{
+    fn default() -> Self {
+        Bus::new()
+    }
+}
+
 /// Internal data for the bus
 struct BusData<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + Clone + Send> {
-    sender_list: Vec<(Sender<BusMessage<M, I>>, Vec<I>)>,
-    sender: Sender<BusMessage<M, I>>,
+    sender_list: Vec<(BusSender<M, I>, Vec<I>)>,
+    sender: BusSender<M, I>,
 }
+
+/// Custom type definition for a sender for BusMessages
+pub type BusSender<M, I> = std::sync::mpsc::Sender<BusMessage<M, I>>;
+
+/// Custom type definition for a receiver for BusMessages
+pub type BusReceiver<M, I> = std::sync::mpsc::Receiver<BusMessage<M, I>>;
 
 /// A generic Bus message.
 ///
@@ -167,11 +177,11 @@ impl<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + Clone + Sen
     /// Creates a new `BusMessage`, which is holding the message itself and the definition
     /// which is defining the filtering. Every channel who has subscribed to the same
     /// ident, will receive the the `BusMessage` when send to the bus.
-    /// 
+    ///
     /// ```rust
     /// // Create the new bus
     /// use bus::BusMessage;
-    /// 
+    ///
     /// BusMessage::new("Message 1", "Channel 1");
     /// ```
     pub fn new(message: M, ident: I) -> Self {
@@ -190,24 +200,27 @@ fn remove_item<T>(vec: &mut Vec<T>, index: usize) -> Option<T> {
     }
 }
 
+/// Custom type definition for Result with a BusError
+pub type Result<R> = std::result::Result<R, BusError>;
+
 /// Generic easy Error for the Bus
 #[derive(Debug, Clone)]
-pub enum Error {
+pub enum BusError {
     Lock,
     RecvError(std::sync::mpsc::RecvError),
 }
 
-impl std::fmt::Display for Error {
+impl std::fmt::Display for BusError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Error::Lock => write!(f, "Lock error"),
-            Error::RecvError(_) => write!(f, "Recv Error"),
+            BusError::Lock => write!(f, "Lock error"),
+            BusError::RecvError(_) => write!(f, "Recv Error"),
         }
     }
 }
 
 // This is important for other errors to wrap this one.
-impl std::error::Error for Error {
+impl std::error::Error for BusError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         // Generic error, underlying cause isn't tracked.
         None
@@ -215,9 +228,9 @@ impl std::error::Error for Error {
 }
 
 // from std mpsc recv error
-impl From<std::sync::mpsc::RecvError> for Error {
+impl From<std::sync::mpsc::RecvError> for BusError {
     fn from(err: std::sync::mpsc::RecvError) -> Self {
-        Error::RecvError(err)
+        BusError::RecvError(err)
     }
 }
 
