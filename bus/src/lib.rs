@@ -1,19 +1,48 @@
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
-// Internal data for the bus
-struct BusData<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + Clone + Send> {
-    sender_list: Vec<(Sender<BusMessage<M, I>>, Vec<I>)>,
-    sender: Sender<BusMessage<M, I>>,
-}
-
+/// Bus which receives data with a specific ident and sends the message
+/// to all receivers which have subscriped for the same ident.
+///
+/// This bus is build upon the rust OOTB MPSC and combines them to a MPMC where
+/// messages get cloned for every receiver who has subscriped for it.
+///
+/// The internal structure looks something like this:
+/// ```compile_fail
+/// Sender 1 --->                                     Bus Sender ---> Receiver 1
+///                Bus Receiver -> Filter & Clone ->
+/// Sender 2 --->                                     Bus Sender ---> Receiver 2
+/// ```
 #[derive(Clone)]
 pub struct Bus<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + Clone + Send> {
     data: Arc<Mutex<BusData<M, I>>>,
 }
 
 impl<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + Clone + Send> Bus<M, I> {
-    pub fn new() -> Bus<M, I> {
+    /// Creates a new bus, which is providing a channel function, to
+    /// create new channel to receive and send from and with the bus.
+    /// 
+    /// ```rust
+    /// // Create the new bus
+    /// use bus::{Bus, BusMessage};
+    /// 
+    /// let bus = Bus::new();
+    /// 
+    /// // Create two new channels
+    /// let (Sender1, Receiver1) = bus.channel(vec!["Channel 1"]).unwrap();
+    /// let (Sender2, Receiver2) = bus.channel(vec!["Channel 1"]).unwrap();
+    /// 
+    /// // Send a message from each sender
+    /// Sender1.send(BusMessage::new("Message 1", "Channel 1")).unwrap();
+    /// Sender2.send(BusMessage::new("Message 2", "Channel 1")).unwrap();
+    /// 
+    /// // Check if the messages got received
+    /// assert_eq!("Message 1", Receiver1.recv().unwrap().message);
+    /// assert_eq!("Message 1", Receiver2.recv().unwrap().message);
+    /// assert_eq!("Message 2", Receiver1.recv().unwrap().message);
+    /// assert_eq!("Message 2", Receiver2.recv().unwrap().message);
+    /// ```
+    pub fn new() -> Self {
         // create the default channel
         let (sender, receiver): (Sender<BusMessage<M, I>>, Receiver<BusMessage<M, I>>) = channel();
 
@@ -30,7 +59,7 @@ impl<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + Clone + Sen
         std::thread::spawn(move || {
             // endless loop the handle the data
             loop {
-                let res = Bus::reactor_handler_intern(&bus_data_thread, &receiver);
+                let res = Bus::bus_handler_intern(&bus_data_thread, &receiver);
                 if res.is_err() {
                     println!("Bus error: {:?}", res);
                 }
@@ -41,7 +70,9 @@ impl<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + Clone + Sen
         Bus { data: bus_data }
     }
 
-    fn reactor_handler_intern(
+    /// Internal bus handler which runs within the thread and
+    /// performs the filter and copy tasks for each message
+    fn bus_handler_intern(
         data: &Arc<Mutex<BusData<M, I>>>,
         receiver: &Receiver<BusMessage<M, I>>,
     ) -> Result<(), Error> {
@@ -72,6 +103,29 @@ impl<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + Clone + Sen
         Ok(())
     }
 
+    /// Create a new channel to and from the bus, returning a Sender and Receiver. 
+    /// All data sendet to the Sender get availble to all Receivers which have provided
+    /// the same ident. 
+    /// 
+    /// ```rust
+    /// use bus::{Bus, BusMessage};
+    /// 
+    /// // Create the new bus
+    /// let bus = Bus::new();
+    /// 
+    /// // Create two new channels
+    /// let (Sender1, Receiver1) = bus.channel(vec!["Channel 1"]).unwrap();
+    /// let (Sender2, Receiver2) = bus.channel(vec!["Channel 1", "Channel 2"]).unwrap();
+    /// 
+    /// // Send a message from each sender
+    /// Sender1.send(BusMessage::new("Message 1", "Channel 1")).unwrap();
+    /// Sender2.send(BusMessage::new("Message 2", "Channel 2")).unwrap();
+    /// 
+    /// // Check if the messages got received
+    /// assert_eq!("Message 1", Receiver1.recv().unwrap().message);
+    /// assert_eq!("Message 1", Receiver2.recv().unwrap().message);
+    /// assert_eq!("Message 2", Receiver2.recv().unwrap().message);
+    /// ```
     pub fn channel(
         &self,
         idents: Vec<I>,
@@ -90,6 +144,12 @@ impl<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + Clone + Sen
     }
 }
 
+/// Internal data for the bus
+struct BusData<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + Clone + Send> {
+    sender_list: Vec<(Sender<BusMessage<M, I>>, Vec<I>)>,
+    sender: Sender<BusMessage<M, I>>,
+}
+
 /// A generic Bus message.
 ///
 /// The I defines the Ident, to compare if a message should be sent to a specific receiver or not
@@ -101,16 +161,25 @@ pub struct BusMessage<M: 'static + PartialEq + Clone + Send, I: 'static + Partia
     pub ident: I,
 }
 
-impl<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + Clone + Send> BusMessage<M, I> {
+impl<M: 'static + PartialEq + Clone + Send, I: 'static + PartialEq + Clone + Send>
+    BusMessage<M, I>
+{
+    /// Creates a new `BusMessage`, which is holding the message itself and the definition
+    /// which is defining the filtering. Every channel who has subscribed to the same
+    /// ident, will receive the the `BusMessage` when send to the bus.
+    /// 
+    /// ```rust
+    /// // Create the new bus
+    /// use bus::BusMessage;
+    /// 
+    /// BusMessage::new("Message 1", "Channel 1");
+    /// ```
     pub fn new(message: M, ident: I) -> Self {
-        BusMessage {
-            message,
-            ident
-        }
+        BusMessage { message, ident }
     }
 }
 
-/// Save remove of an object from an array is nightly right now
+/// Save remove of an object from an vec is nightly right now
 ///
 /// Please track this rust commit to check when it's get available to remove this function
 /// #40062 remove_item --> Bad Rust, this should be avilable already OOTB ;)
@@ -124,7 +193,6 @@ fn remove_item<T>(vec: &mut Vec<T>, index: usize) -> Option<T> {
 /// Generic easy Error for the Bus
 #[derive(Debug, Clone)]
 pub enum Error {
-    Bus(String),
     Lock,
     RecvError(std::sync::mpsc::RecvError),
 }
@@ -132,7 +200,6 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Error::Bus(s) => write!(f, "{}", s),
             Error::Lock => write!(f, "Lock error"),
             Error::RecvError(_) => write!(f, "Recv Error"),
         }
@@ -172,12 +239,20 @@ mod tests {
 
         assert_eq!("Message 1", rx1.recv().unwrap().message);
         assert_eq!("Message 2", rx1.recv().unwrap().message);
-        assert_eq!(true, rx1.recv_timeout(std::time::Duration::from_millis(1)).is_err());
+        assert_eq!(
+            true,
+            rx1.recv_timeout(std::time::Duration::from_millis(1))
+                .is_err()
+        );
 
         assert_eq!("Message 1", rx2.recv().unwrap().message);
         assert_eq!("Message 2", rx2.recv().unwrap().message);
         assert_eq!("Message 3", rx2.recv().unwrap().message);
         assert_eq!("Message 4", rx2.recv().unwrap().message);
-        assert_eq!(true, rx2.recv_timeout(std::time::Duration::from_millis(1)).is_err());
+        assert_eq!(
+            true,
+            rx2.recv_timeout(std::time::Duration::from_millis(1))
+                .is_err()
+        );
     }
 }
