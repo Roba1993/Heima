@@ -28,6 +28,7 @@ impl PartialEq for Ident {
 
 /// A device which holds multiple activities which a providing
 /// specific functionalities.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Device {
     pub id: u32,
     pub name: String,
@@ -36,6 +37,7 @@ pub struct Device {
 
 /// The device activity defines, what kind of action it is capable
 /// of and holds the actual value with the information when it was set.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DeviceActivity {
     pub id: u32,
     pub name: String,
@@ -45,6 +47,7 @@ pub struct DeviceActivity {
 }
 
 /// The device action defines what functionality a device supports.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum DeviceAction {
     Light,
     LightDim,
@@ -55,18 +58,21 @@ pub enum DeviceAction {
 }
 
 /// The actual value store
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Value {
     Light(Light),
     Temperature(Temperature),
 }
 
 /// The temperatur which can be set
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Temperature {
     Celsius(f32),
     Fahrenheit(f32),
 }
 
 /// The light which can be set
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Light {
     pub hue: f32,
     pub saturation: f32,
@@ -75,6 +81,7 @@ pub struct Light {
 
 /// A room which holds multiple devices
 /// and has a name to group them.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Room {
     pub id: u32,
     pub name: String,
@@ -83,6 +90,7 @@ pub struct Room {
 
 /// A Appartement combines multiple rooms and
 /// allows to control different areas or houses.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Appartement {
     pub id: u32,
     pub name: String,
@@ -91,6 +99,7 @@ pub struct Appartement {
 
 /// The general Message, which is
 /// internally a specific one.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Message {
     DeviceValueUpdate(DeviceValueUpdate),
     AddDeviceMessage(AddDeviceMessage),
@@ -108,6 +117,7 @@ pub enum Message {
 }
 
 /// Specific message to update a device value
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DeviceValueUpdate {
     pub timestamp: u32,
     pub device_id: u32,
@@ -119,18 +129,21 @@ pub struct DeviceValueUpdate {
 /// Specific message to add a device to the system
 ///
 /// This enables, that device get listet in the structure etc.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AddDeviceMessage {
     pub timestamp: u32,
     pub device: Device,
 }
 
 /// Specific message to remove a message
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RemoveDeviceMessage {
     pub timestamp: u32,
     pub device_id: u32,
 }
 
 /// Specific message to rename a device
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RenameDeviceMessage {
     pub timestamp: u32,
     pub device_id: u32,
@@ -138,18 +151,21 @@ pub struct RenameDeviceMessage {
 }
 
 /// Specific message to provide all rooms available
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AllRoomsMessage {
     pub timestamp: u32,
     pub rooms: Vec<Room>,
 }
 
 /// Specific message to add a room to the structure
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AddRoomMessage {
     pub timestamp: u32,
     pub room: Room,
 }
 
 /// Specific message to rename a room
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RenameRoomMessage {
     pub timestamp: u32,
     pub room_id: u32,
@@ -157,12 +173,14 @@ pub struct RenameRoomMessage {
 }
 
 /// Specific message to remove a room
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RemoveRoomMessage {
     pub timestamp: u32,
     pub room_id: u32,
 }
 
 /// Specific message to add a device to a room
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RoomAddDevicesMessage {
     pub timestamp: u32,
     pub room_id: u32,
@@ -170,6 +188,7 @@ pub struct RoomAddDevicesMessage {
 }
 
 /// Specific message to remove device from a room
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RoomRemoveDevicesMessage {
     pub timestamp: u32,
     pub room_id: u32,
@@ -177,12 +196,14 @@ pub struct RoomRemoveDevicesMessage {
 }
 
 /// Specific message with all appartments
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AllAppartementsMessage {
     pub timestamp: u32,
     pub rooms: Vec<Appartement>,
 }
 
 /// Specific message to add a room to a appartment
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AppartementAddRoomMessage {
     pub timestamp: u32,
     pub appartement_id: u32,
@@ -190,6 +211,7 @@ pub struct AppartementAddRoomMessage {
 }
 
 /// Specific message to remove a room from a appartment
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AppartementRemoveRoomMessage {
     pub timestamp: u32,
     pub appartement_id: u32,
